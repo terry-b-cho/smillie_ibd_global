@@ -89,4 +89,7 @@ $RECYCLE.BIN/
 results/
 output/
 figures/
-plots/ 
+plots/
+
+# Project constraints and internal documentation
+code_constraints/ 

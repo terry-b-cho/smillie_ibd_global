@@ -69,7 +69,7 @@ US_beta2$CpG_ID_v2 <- rownames(US_beta2)
 US_beta2 <- US_beta2 %>% relocate(CpG_ID_v2, .before = 1)
 print(dim(US_beta2))
 
-cat("Loading US EPIC beta values...\n")
+cat("Loading US EPICv1 beta values...\n")
 US_beta1 <- fread(file.path(methylation_data_path, "US_epic_beta.csv"), 
                  header = TRUE, stringsAsFactors = FALSE, showProgress = TRUE)
 # Apply same row name processing for consistency
@@ -80,13 +80,25 @@ US_beta1$CpG_ID <- rownames(US_beta1)
 US_beta1 <- US_beta1 %>% relocate(CpG_ID, .before = 1)
 print(dim(US_beta1))
 ```
-```{R}
-US_beta1
 
-```
 ```{r view-india-beta}
+# Loading India EPICv2 beta values...
+# [1] 936990    190
 head(India_beta)
 ```
+
+```{R}
+# Loading US EPICv2 beta values...
+# [1] 936990     60
+head(US_beta2)
+```
+
+```{R}
+# Loading US EPICv1 beta values...
+# [1] 866836    106
+head(US_beta1)
+```
+
 
 ## Data Merging
 
@@ -103,6 +115,14 @@ US_beta2_dt <- as.data.table(US_beta2)
 all_methylation <- merge(India_dt, US_beta2_dt, by = "CpG_ID_v2", all = TRUE)
 # Convert back to data.frame for downstream compatibility
 all_methylation <- as.data.frame(all_methylation)
+all_methylation %>% head()
+
+# This wont work for such big data
+# all_methylation %>% DT::datatable(options = list(
+#   scrollX=TRUE, scrollY=TRUE,
+#   initComplete = htmlwidgets::JS(
+#     "function(settings, json) {",
+#     paste0("$(this.api().table().container()).css({'font-size': '8pt'});"),"}")))
 ```
 
 ```{r create-cpg-id}
@@ -117,6 +137,7 @@ all_methylation$CpG_ID <- sapply(all_methylation$CpG_ID_v2, function(x) {
 
 # Reorder columns to put CpG_ID as second column
 all_methylation <- all_methylation %>% relocate(CpG_ID, .after = CpG_ID_v2)
+all_methylation %>% head()
 ```
 
 ```{r merge-data-2}
@@ -130,6 +151,8 @@ US_beta1_dt <- as.data.table(US_beta1)
 # Optimized merge for memory efficiency with large methylation datasets
 all_methylation <- merge(all_methylation_dt, US_beta1_dt, by = "CpG_ID", all = TRUE)
 all_methylation <- as.data.frame(all_methylation)
+
+all_methylation %>% head()
 ```
 
 ```{r view-merged-data}
@@ -199,15 +222,15 @@ print("CDSA_epigenetics_manifest.csv not available in current data structure")
 #                             col.names = c('epiID', 'sampleID'), stringsAsFactors = FALSE)
 
 # Efficient loading of sample mapping using fread for faster I/O operations
-sample_mapping <- fread('data/methylation/epiSampleID_2_subjectID.txt', 
+sample_mapping <- fread(file.path(methylation_data_path, "epiSampleID_2_subjectID.txt"), 
                        sep = '\t', header = FALSE, 
                        col.names = c('epiID', 'sampleID'))
 CDSA_epiID2mgxSampleName <- setNames(sample_mapping$sampleID, sample_mapping$epiID)
 print(paste("Loaded", length(CDSA_epiID2mgxSampleName), "sample mappings"))
 ```
 
-```{r empty-cell-1}
-# Empty cell equivalent
+```{r view-sample-mapping}
+sample_mapping
 ```
 
 ```{r v1-samples}
@@ -217,9 +240,18 @@ print(paste("Loaded", length(CDSA_epiID2mgxSampleName), "sample mappings"))
 # v1_samples <- CDSA_epiID2mgxSampleName[v1_epi_samples]
 
 # Note: IDAT files not available in current structure, using placeholder for v1_samples
-print("IDAT files not available in current structure - v1_samples identification not possible")
-v1_samples <- character(0)  # Placeholder - will need to be updated when IDAT files are available
+print("IDAT files not available in current structure - v1_samples identification using US_beta1 colnames ")
+v1_samples <- colnames(US_beta1)[2:ncol(US_beta1)]
+
+US_v1_sample_mapping <- sample_mapping %>% filter(epiID %in% colnames(US_beta1)[2:ncol(US_beta1)])
+US_v1_sample_id <- US_v1_sample_mapping$sampleID
 ```
+
+```{R}
+all_methylation %>% colnames()
+```
+
+
 
 ```{r update-column-names}
 # Update column names using sample mapping
@@ -252,7 +284,7 @@ head(all_methylation)
 # CDSA_meta <- read.csv('data/methylation/CDSA_metadata.csv')
 
 # Efficient metadata loading using fread for faster processing
-CDSA_meta <- fread('data/methylation/CDSA_metadata.csv')
+CDSA_meta <-  fread(file.path(methylation_data_path, "CDSA_metadata.csv") )
 CDSA_meta <- as.data.frame(CDSA_meta)  # Convert to data.frame for downstream compatibility
 sampleID2IBD <- setNames(CDSA_meta$dx != 'HC', CDSA_meta$sampleID)
 # Note: cohort column may not be available in current metadata, using placeholder
@@ -448,7 +480,7 @@ head(sig_res)
 
 # Efficient loading using fread for large annotation table (387MB file)
 cat("Loading EPICv2 annotation table...\n")
-v2_annot_df <- fread('data/methylation/EPICv2_annotation_table.csv', 
+v2_annot_df <- fread(file.path(methylation_data_path, "EPICv2_annotation_table.csv"),
                     header = TRUE, stringsAsFactors = FALSE, showProgress = TRUE)
 # Process row names for consistency with original structure
 rownames(v2_annot_df) <- v2_annot_df[[1]]
