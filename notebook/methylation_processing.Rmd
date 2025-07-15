@@ -2,6 +2,7 @@
 title: "Methylation Data Processing and Analysis"
 output: html_document
 date: "`r Sys.Date()`"
+author:
 ---
 
 ```{r setup, include=FALSE}
@@ -35,23 +36,54 @@ set.seed(42)
 # US_beta2 <- read.csv('/broad/smillie-data/proj/CDSA/epigenetics/US_site/epic2_beta.csv', row.names = 1)
 # US_beta1 <- read.csv('/broad/smillie-data/proj/CDSA/epigenetics/US_site/epic_beta.csv', row.names = 1)
 
-# Updated paths:
-India_beta <- read.csv('data/methylation/India_epic2_beta.csv', row.names = 1)
+base_proj_path <-  "/Users/byeongyeoncho/main/github/smillie_ibd_global/"
+methylation_data_path <- file.path(base_proj_path, "data/methylation") 
+
+# Original inefficient loading method for large CSV files:
+# India_beta <- read.csv(file.path(methylation_data_path, "India_epic2_beta.csv"), row.names = 1)
+# US_beta2 <- read.csv(file.path(methylation_data_path, "US_epic2_beta.csv"), row.names = 1)
+# US_beta1 <- read.csv(file.path(methylation_data_path, "US_epic_beta.csv"), row.names = 1)
+
+# Updated efficient loading using data.table::fread for gigabyte-sized files
+# fread() provides 10-100x faster performance compared to read.csv() for large datasets
+cat("Loading India EPICv2 beta values...\n")
+India_beta <- fread(file.path(methylation_data_path, "India_epic2_beta.csv"), 
+                   header = TRUE, stringsAsFactors = FALSE, showProgress = TRUE)
+# Convert first column to row names and remove from data frame for consistency with original structure
+rownames(India_beta) <- India_beta[[1]]
+India_beta <- India_beta[, -1, with = FALSE]
+# Convert to data.frame for compatibility with downstream dplyr operations
+India_beta <- as.data.frame(India_beta)
 India_beta$CpG_ID_v2 <- rownames(India_beta)
 India_beta <- India_beta %>% relocate(CpG_ID_v2, .before = 1)
 print(dim(India_beta))
 
-US_beta2 <- read.csv('data/methylation/US_epic2_beta.csv', row.names = 1)
+cat("Loading US EPICv2 beta values...\n")
+US_beta2 <- fread(file.path(methylation_data_path, "US_epic2_beta.csv"), 
+                 header = TRUE, stringsAsFactors = FALSE, showProgress = TRUE)
+# Apply same row name processing for consistency
+rownames(US_beta2) <- US_beta2[[1]]
+US_beta2 <- US_beta2[, -1, with = FALSE]
+US_beta2 <- as.data.frame(US_beta2)
 US_beta2$CpG_ID_v2 <- rownames(US_beta2)
 US_beta2 <- US_beta2 %>% relocate(CpG_ID_v2, .before = 1)
 print(dim(US_beta2))
 
-US_beta1 <- read.csv('data/methylation/US_epic_beta.csv', row.names = 1)
+cat("Loading US EPIC beta values...\n")
+US_beta1 <- fread(file.path(methylation_data_path, "US_epic_beta.csv"), 
+                 header = TRUE, stringsAsFactors = FALSE, showProgress = TRUE)
+# Apply same row name processing for consistency
+rownames(US_beta1) <- US_beta1[[1]]
+US_beta1 <- US_beta1[, -1, with = FALSE]
+US_beta1 <- as.data.frame(US_beta1)
 US_beta1$CpG_ID <- rownames(US_beta1)
 US_beta1 <- US_beta1 %>% relocate(CpG_ID, .before = 1)
 print(dim(US_beta1))
 ```
+```{R}
+US_beta1
 
+```
 ```{r view-india-beta}
 head(India_beta)
 ```
@@ -59,8 +91,18 @@ head(India_beta)
 ## Data Merging
 
 ```{r merge-data-1}
-# Merge India and US EPICv2 data
-all_methylation <- merge(India_beta, US_beta2, by = "CpG_ID_v2", all = TRUE)
+# Original merge operation for large datasets:
+# all_methylation <- merge(India_beta, US_beta2, by = "CpG_ID_v2", all = TRUE)
+
+# Efficient merge using data.table for improved memory usage and speed on large datasets
+cat("Merging India and US EPICv2 data...\n")
+# Convert to data.table temporarily for efficient merge operations
+India_dt <- as.data.table(India_beta)
+US_beta2_dt <- as.data.table(US_beta2)
+# data.table merge is optimized for large datasets with better memory management
+all_methylation <- merge(India_dt, US_beta2_dt, by = "CpG_ID_v2", all = TRUE)
+# Convert back to data.frame for downstream compatibility
+all_methylation <- as.data.frame(all_methylation)
 ```
 
 ```{r create-cpg-id}
@@ -78,8 +120,16 @@ all_methylation <- all_methylation %>% relocate(CpG_ID, .after = CpG_ID_v2)
 ```
 
 ```{r merge-data-2}
-# Merge with EPIC v1 data
-all_methylation <- merge(all_methylation, US_beta1, by = "CpG_ID", all = TRUE)
+# Original merge with EPIC v1 data:
+# all_methylation <- merge(all_methylation, US_beta1, by = "CpG_ID", all = TRUE)
+
+# Efficient merge using data.table for large dataset operations
+cat("Merging with US EPIC v1 data...\n")
+all_methylation_dt <- as.data.table(all_methylation)
+US_beta1_dt <- as.data.table(US_beta1)
+# Optimized merge for memory efficiency with large methylation datasets
+all_methylation <- merge(all_methylation_dt, US_beta1_dt, by = "CpG_ID", all = TRUE)
+all_methylation <- as.data.frame(all_methylation)
 ```
 
 ```{r view-merged-data}
@@ -143,10 +193,15 @@ print("CDSA_epigenetics_manifest.csv not available in current data structure")
 #            '/broad/smillie-data/proj/CDSA/epigenetics/epiSampleID_2_subjectID.txt',
 #            sep = '\t', row.names = FALSE, col.names = FALSE, quote = FALSE)
 
-# Updated path (load existing mapping):
-sample_mapping <- read.table('data/methylation/epiSampleID_2_subjectID.txt', 
-                            sep = '\t', header = FALSE, 
-                            col.names = c('epiID', 'sampleID'), stringsAsFactors = FALSE)
+# Original sample mapping loading method:
+# sample_mapping <- read.table('data/methylation/epiSampleID_2_subjectID.txt', 
+#                             sep = '\t', header = FALSE, 
+#                             col.names = c('epiID', 'sampleID'), stringsAsFactors = FALSE)
+
+# Efficient loading of sample mapping using fread for faster I/O operations
+sample_mapping <- fread('data/methylation/epiSampleID_2_subjectID.txt', 
+                       sep = '\t', header = FALSE, 
+                       col.names = c('epiID', 'sampleID'))
 CDSA_epiID2mgxSampleName <- setNames(sample_mapping$sampleID, sample_mapping$epiID)
 print(paste("Loaded", length(CDSA_epiID2mgxSampleName), "sample mappings"))
 ```
@@ -193,8 +248,12 @@ head(all_methylation)
 # Old path:
 # CDSA_meta <- read.csv('/broad/smillie-data/proj/CDSA/metadata/CDSA_Dhakan_cohort_metadata.csv')
 
-# Updated path (use available metadata file):
-CDSA_meta <- read.csv('data/methylation/CDSA_metadata.csv')
+# Original metadata loading method:
+# CDSA_meta <- read.csv('data/methylation/CDSA_metadata.csv')
+
+# Efficient metadata loading using fread for faster processing
+CDSA_meta <- fread('data/methylation/CDSA_metadata.csv')
+CDSA_meta <- as.data.frame(CDSA_meta)  # Convert to data.frame for downstream compatibility
 sampleID2IBD <- setNames(CDSA_meta$dx != 'HC', CDSA_meta$sampleID)
 # Note: cohort column may not be available in current metadata, using placeholder
 # sampleID2country <- setNames(recode(CDSA_meta$cohort, 'CDSA-US' = 'US', 'CDSA-India' = 'India', 'DhakanHC' = 'India'), 
@@ -285,21 +344,50 @@ print(paste("Example site:", rownames(to_test_mat)[i]))
 ## Differential Methylation Analysis
 
 ```{r run-statistical-tests}
-# Run rank-sum tests for differential methylation
-res <- list()
+# Original statistical testing approach:
+# res <- list()
+# sites_list <- rownames(to_test_mat)
+# test_indices <- which(i_to_test)
+# for (idx in seq_along(test_indices)) {
+#   i <- test_indices[idx]
+#   row_data <- as.numeric(to_test_mat[i, ])
+#   IBD_epi <- row_data[IBD_vec & !is.na(row_data)]
+#   HC_epi <- row_data[!IBD_vec & !is.na(row_data)]
+#   if (length(IBD_epi) > 0 & length(HC_epi) > 0) {
+#     test_result <- wilcox.test(IBD_epi, HC_epi)
+#     IBD_coef <- median(IBD_epi, na.rm = TRUE) - median(HC_epi, na.rm = TRUE)
+#     res[[length(res) + 1]] <- data.frame(...)
+#   }
+# }
+
+# Optimized statistical testing with pre-allocation for better memory efficiency
 sites_list <- rownames(to_test_mat)
 test_indices <- which(i_to_test)
+n_tests <- length(test_indices)
 
-# Create progress bar
+# Pre-allocate results data.frame for memory efficiency instead of growing list
+res <- data.frame(
+  tested_index = integer(n_tests),
+  epi_site = character(n_tests),
+  IBD_pval = numeric(n_tests),
+  IBD_coef = numeric(n_tests),
+  stringsAsFactors = FALSE
+)
+
+# Create progress bar with memory usage information
 pb <- progress_bar$new(
-  format = "Running tests [:bar] :percent (:current/:total) ETA: :eta",
-  total = length(test_indices),
+  format = "Running tests [:bar] :percent (:current/:total) ETA: :eta Memory: :bytes",
+  total = n_tests,
   clear = FALSE
 )
 
+cat(paste("Starting statistical analysis of", n_tests, "CpG sites...\n"))
+
+# Optimized loop with pre-allocated results for faster execution
+valid_results <- 0
 for (idx in seq_along(test_indices)) {
   i <- test_indices[idx]
-  pb$tick()
+  pb$tick(tokens = list(bytes = format(object.size(res), units = "MB")))
   
   row_data <- as.numeric(to_test_mat[i, ])
   IBD_epi <- row_data[IBD_vec & !is.na(row_data)]
@@ -309,18 +397,24 @@ for (idx in seq_along(test_indices)) {
     test_result <- wilcox.test(IBD_epi, HC_epi)
     IBD_coef <- median(IBD_epi, na.rm = TRUE) - median(HC_epi, na.rm = TRUE)
     
-    res[[length(res) + 1]] <- data.frame(
+    valid_results <- valid_results + 1
+    res[valid_results, ] <- list(
       tested_index = i,
       epi_site = sites_list[i],
       IBD_pval = test_result$p.value,
-      IBD_coef = IBD_coef,
-      stringsAsFactors = FALSE
+      IBD_coef = IBD_coef
     )
+  }
+  
+  # Periodic garbage collection for memory management with large datasets
+  if (idx %% 10000 == 0) {
+    gc(verbose = FALSE)
   }
 }
 
-# Combine results
-res <- do.call(rbind, res)
+# Trim results to actual number of valid tests performed
+res <- res[1:valid_results, ]
+cat(paste("Completed", valid_results, "valid statistical tests\n"))
 ```
 
 ```{r process-results}
@@ -349,8 +443,17 @@ head(sig_res)
 # Old path:
 # v2_annot_df <- read.csv('/broad/smillie-data/proj/CDSA/epigenetics/EPICv2_annotation_table.csv', row.names = 1)
 
-# Updated path:
-v2_annot_df <- read.csv('data/methylation/EPICv2_annotation_table.csv', row.names = 1)
+# Original inefficient loading method for large annotation file:
+# v2_annot_df <- read.csv('data/methylation/EPICv2_annotation_table.csv', row.names = 1)
+
+# Efficient loading using fread for large annotation table (387MB file)
+cat("Loading EPICv2 annotation table...\n")
+v2_annot_df <- fread('data/methylation/EPICv2_annotation_table.csv', 
+                    header = TRUE, stringsAsFactors = FALSE, showProgress = TRUE)
+# Process row names for consistency with original structure
+rownames(v2_annot_df) <- v2_annot_df[[1]]
+v2_annot_df <- v2_annot_df[, -1, with = FALSE]
+v2_annot_df <- as.data.frame(v2_annot_df)
 ```
 
 ```{r view-annotation}
